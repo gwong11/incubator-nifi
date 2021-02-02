@@ -24,12 +24,12 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.nifi.controller.ControllerService;
+import org.apache.nifi.expression.ExpressionLanguageScope;
 
 /**
- * An immutable object for holding information about a type of processor
+ * An immutable object for holding information about a type of component
  * property.
  *
- * @author unattributed
  */
 public final class PropertyDescriptor implements Comparable<PropertyDescriptor> {
 
@@ -79,7 +79,18 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
      * indicates whether or not this property supports the Attribute Expression
      * Language
      */
+    @Deprecated
     private final boolean expressionLanguageSupported;
+    /**
+     * indicates whether or nor this property will evaluate expression language
+     * against the flow file attributes
+     */
+    private final ExpressionLanguageScope expressionLanguageScope;
+    /**
+     * indicates whether or not this property represents resources that should be added
+     * to the classpath and used for loading native libraries for this instance of the component
+     */
+    private final boolean dynamicallyModifiesClasspath;
 
     /**
      * the interface of the {@link ControllerService} that this Property refers
@@ -103,7 +114,9 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         this.required = builder.required;
         this.sensitive = builder.sensitive;
         this.dynamic = builder.dynamic;
+        this.dynamicallyModifiesClasspath = builder.dynamicallyModifiesClasspath;
         this.expressionLanguageSupported = builder.expressionLanguageSupported;
+        this.expressionLanguageScope = builder.expressionLanguageScope;
         this.controllerServiceDefinition = builder.controllerServiceDefinition;
         this.validators = new ArrayList<>(builder.validators);
     }
@@ -121,61 +134,21 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
      * If this descriptor has a set of allowable values then the given value is
      * only checked against the allowable values.
      *
-     * @param input
-     * @param context
-     * @return
+     * @param input the value to validate
+     * @param context the context of validation
+     * @return the result of validating the input
      */
     public ValidationResult validate(final String input, final ValidationContext context) {
         ValidationResult lastResult = Validator.INVALID.validate(this.name, input, context);
+
         if (allowableValues != null && !allowableValues.isEmpty()) {
             final ConstrainedSetValidator csValidator = new ConstrainedSetValidator(allowableValues);
             final ValidationResult csResult = csValidator.validate(this.name, input, context);
+
             if (csResult.isValid()) {
                 lastResult = csResult;
             } else {
                 return csResult;
-            }
-        }
-
-        // if the property descriptor identifies a Controller Service, validate that the ControllerService exists, is of the correct type, and is valid
-        if (controllerServiceDefinition != null) {
-            final Set<String> validIdentifiers = context.getControllerServiceLookup().getControllerServiceIdentifiers(controllerServiceDefinition);
-            if (validIdentifiers != null && validIdentifiers.contains(input)) {
-                final ControllerService controllerService = context.getControllerServiceLookup().getControllerService(input);
-                if (!context.getControllerServiceLookup().isControllerServiceEnabled(controllerService)) {
-                    return new ValidationResult.Builder()
-                            .input(input)
-                            .subject(getName())
-                            .valid(false)
-                            .explanation("Controller Service " + controllerService + " is disabled")
-                            .build();
-                }
-
-                final Collection<ValidationResult> validationResults = controllerService.validate(context.getControllerServiceValidationContext(controllerService));
-                for (final ValidationResult result : validationResults) {
-                    if (!result.isValid()) {
-                        return new ValidationResult.Builder()
-                                .input(input)
-                                .subject(getName())
-                                .valid(false)
-                                .explanation("Controller Service is not valid: "
-                                        + ((result.getExplanation() == null || result.getExplanation().trim().isEmpty()) ? "(Service does not provide any explanation)" : result.getExplanation()))
-                                .build();
-                    }
-                }
-
-                return new ValidationResult.Builder()
-                        .input(input)
-                        .subject(getName())
-                        .valid(true)
-                        .build();
-            } else {
-                return new ValidationResult.Builder()
-                        .input(input)
-                        .subject(getName())
-                        .valid(false)
-                        .explanation("Invalid Controller Service: " + input + " is not a valid Controller Service Identifier or does not reference the correct type of Controller Service")
-                        .build();
             }
         }
 
@@ -185,8 +158,26 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
                 break;
             }
         }
+
+        if (getControllerServiceDefinition() != null) {
+            final ControllerService service = context.getControllerServiceLookup().getControllerService(input);
+            if (service == null) {
+                return new ValidationResult.Builder()
+                    .input(input)
+                    .subject(getDisplayName())
+                    .valid(false)
+                    .explanation("Property references a Controller Service that does not exist")
+                    .build();
+            } else {
+                return new ValidationResult.Builder()
+                    .valid(true)
+                    .build();
+            }
+        }
+
         return lastResult;
     }
+
 
     public static final class Builder {
 
@@ -197,8 +188,13 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         private List<AllowableValue> allowableValues = null;
         private boolean required = false;
         private boolean sensitive = false;
+
+        @Deprecated
         private boolean expressionLanguageSupported = false;
+
+        private ExpressionLanguageScope expressionLanguageScope = ExpressionLanguageScope.NONE;
         private boolean dynamic = false;
+        private boolean dynamicallyModifiesClasspath = false;
         private Class<? extends ControllerService> controllerServiceDefinition;
         private List<Validator> validators = new ArrayList<>();
 
@@ -211,6 +207,9 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
             this.required = specDescriptor.required;
             this.sensitive = specDescriptor.sensitive;
             this.dynamic = specDescriptor.dynamic;
+            this.dynamicallyModifiesClasspath = specDescriptor.dynamicallyModifiesClasspath;
+            this.expressionLanguageSupported = specDescriptor.expressionLanguageSupported;
+            this.expressionLanguageScope = specDescriptor.expressionLanguageScope;
             this.controllerServiceDefinition = specDescriptor.getControllerServiceDefinition();
             this.validators = new ArrayList<>(specDescriptor.validators);
             return this;
@@ -224,8 +223,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
          * This is beneficial because it allows a User Interface to represent
          * the name differently.
          *
-         * @param displayName
-         * @return
+         * @param displayName of the property
+         * @return the builder
          */
         public Builder displayName(final String displayName) {
             if (null != displayName) {
@@ -238,8 +237,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         /**
          * Sets the property name.
          *
-         * @param name
-         * @return
+         * @param name of the property
+         * @return the builder
          */
         public Builder name(final String name) {
             if (null != name) {
@@ -252,18 +251,29 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
          * Sets the value indicating whether or not this Property will support
          * the Attribute Expression Language.
          *
-         * @param supported
-         * @return
+         * @param supported true if yes; false otherwise
+         * @return the builder
          */
+        @Deprecated
         public Builder expressionLanguageSupported(final boolean supported) {
             this.expressionLanguageSupported = supported;
             return this;
         }
 
         /**
+         * Sets the scope of the expression language evaluation
          *
-         * @param description
-         * @return
+         * @param expressionLanguageScope scope of the expression language evaluation
+         * @return the builder
+         */
+        public Builder expressionLanguageSupported(final ExpressionLanguageScope expressionLanguageScope) {
+            this.expressionLanguageScope = expressionLanguageScope;
+            return this;
+        }
+
+        /**
+         * @param description of the property
+         * @return the builder
          */
         public Builder description(final String description) {
             if (null != description) {
@@ -283,8 +293,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
          * should be set to the "Value" of the {@link AllowableValue} object
          * (see {@link AllowableValue#getValue()}).
          *
-         * @param value
-         * @return
+         * @param value default value
+         * @return the builder
          */
         public Builder defaultValue(final String value) {
             if (null != value) {
@@ -299,9 +309,34 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         }
 
         /**
+         * Specifies that the value of this property represents one or more resources that the
+         * framework should add to the classpath of as well as consider when looking for native
+         * libraries for the given component.
+         * <p/>
+         * NOTE: If a component contains a PropertyDescriptor where dynamicallyModifiesClasspath is set to true,
+         *  the component may also be annotated with @RequiresInstanceClassloading, in which case every class will
+         *  be loaded by a separate InstanceClassLoader for each processor instance.<br/>
+         *  It also allows to load native libraries from the extra classpath.
+         *  <p/>
+         *  One can chose to omit the annotation. In this case the loading of native libraries from the extra classpath
+         *  is not supported.
+         *  Also by default, classes will be loaded by a common NarClassLoader, however it's possible to acquire an
+         *  InstanceClassLoader by calling Thread.currentThread().getContextClassLoader() which can be used manually
+         *  to load required classes on an instance-by-instance basis
+         *  (by calling {@link Class#forName(String, boolean, ClassLoader)} for example).
          *
-         * @param values
-         * @return
+         *
+         * @param dynamicallyModifiesClasspath whether or not this property should be used by the framework to modify the classpath
+         * @return the builder
+         */
+        public Builder dynamicallyModifiesClasspath(final boolean dynamicallyModifiesClasspath) {
+            this.dynamicallyModifiesClasspath = dynamicallyModifiesClasspath;
+            return this;
+        }
+
+        /**
+         * @param values contrained set of values
+         * @return the builder
          */
         public Builder allowableValues(final Set<String> values) {
             if (null != values) {
@@ -325,9 +360,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         }
 
         /**
-         *
-         * @param values
-         * @return
+         * @param values constrained set of values
+         * @return the builder
          */
         public Builder allowableValues(final String... values) {
             if (null != values) {
@@ -342,8 +376,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         /**
          * Sets the Allowable Values for this Property
          *
-         * @param values
-         * @return
+         * @param values contrained set of values
+         * @return the builder
          */
         public Builder allowableValues(final AllowableValue... values) {
             if (null != values) {
@@ -353,9 +387,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         }
 
         /**
-         *
-         * @param required
-         * @return
+         * @param required true if yes; false otherwise
+         * @return the builder
          */
         public Builder required(final boolean required) {
             this.required = required;
@@ -363,9 +396,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         }
 
         /**
-         *
-         * @param sensitive
-         * @return
+         * @param sensitive true if sensitive; false otherwise
+         * @return the builder
          */
         public Builder sensitive(final boolean sensitive) {
             this.sensitive = sensitive;
@@ -373,9 +405,8 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
         }
 
         /**
-         *
-         * @param validator
-         * @return
+         * @param validator for the property
+         * @return the builder
          */
         public Builder addValidator(final Validator validator) {
             if (validator != null) {
@@ -390,7 +421,7 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
          *
          * @param controllerServiceDefinition the interface that is implemented
          * by the Controller Service
-         * @return
+         * @return the builder
          */
         public Builder identifiesControllerService(final Class<? extends ControllerService> controllerServiceDefinition) {
             if (controllerServiceDefinition != null) {
@@ -425,7 +456,7 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
                 throw new IllegalStateException("Must specify a name");
             }
             if (!isValueAllowed(defaultValue)) {
-                throw new IllegalStateException("Default value is not in the set of allowable values");
+                throw new IllegalStateException("Default value [" + defaultValue + "] is not in the set of allowable values");
             }
 
             return new PropertyDescriptor(this);
@@ -461,7 +492,15 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
     }
 
     public boolean isExpressionLanguageSupported() {
-        return expressionLanguageSupported;
+        return expressionLanguageSupported || !expressionLanguageScope.equals(ExpressionLanguageScope.NONE);
+    }
+
+    public ExpressionLanguageScope getExpressionLanguageScope() {
+        return expressionLanguageScope;
+    }
+
+    public boolean isDynamicClasspathModifier() {
+        return dynamicallyModifiesClasspath;
     }
 
     public Class<? extends ControllerService> getControllerServiceDefinition() {
@@ -488,7 +527,7 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
             return true;
         }
 
-        PropertyDescriptor desc = (PropertyDescriptor) other;
+        final PropertyDescriptor desc = (PropertyDescriptor) other;
         return this.name.equals(desc.name);
     }
 
@@ -514,7 +553,7 @@ public final class PropertyDescriptor implements Comparable<PropertyDescriptor> 
          * Constructs a validator that will check if the given value is in the
          * given set.
          *
-         * @param validValues
+         * @param validValues values which are acceptible
          * @throws NullPointerException if the given validValues is null
          */
         private ConstrainedSetValidator(final Collection<AllowableValue> validValues) {

@@ -16,11 +16,12 @@
  */
 package org.apache.nifi.reporting;
 
-import java.util.Map;
-
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.PropertyValue;
+import org.apache.nifi.components.state.StateManager;
+import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.controller.ControllerServiceLookup;
+
+import java.util.Map;
 
 /**
  * This interface provides a bridge between the NiFi Framework and a
@@ -28,72 +29,80 @@ import org.apache.nifi.controller.ControllerServiceLookup;
  * statistics, metrics, and monitoring information, as well as configuration
  * supplied by the user.
  */
-public interface ReportingContext {
+public interface ReportingContext extends PropertyContext {
 
     /**
-     * Returns a Map of all known {@link PropertyDescriptor}s to their
+     * @return a Map of all known {@link PropertyDescriptor}s to their
      * configured properties. This Map will contain a <code>null</code> for any
      * Property that has not been configured by the user, even if the
-     * PropertyDescriptor has a default value.
-     *
-     * @return
+     * PropertyDescriptor has a default value
      */
     Map<PropertyDescriptor, String> getProperties();
 
     /**
-     * A PropertyValue that represents the user-configured value for the given
-     * {@link PropertyDescriptor}.
-     *
-     * @param propertyName
-     * @return
-     */
-    PropertyValue getProperty(PropertyDescriptor propertyName);
-
-    /**
-     * Returns the {@link EventAccess} object that can be used to obtain
+     * @return the {@link EventAccess} object that can be used to obtain
      * information about specific events and reports that have happened
-     *
-     * @return
      */
     EventAccess getEventAccess();
 
     /**
-     * Returns the {@link BulletinRepository} that can be used to analyze
+     * @return the {@link BulletinRepository} that can be used to analyze
      * Bulletins that have been emitted and register new Bulletins
-     *
-     * @return
      */
     BulletinRepository getBulletinRepository();
 
     /**
-     * Creates a system-level {@link Bulletin} with the given category, severity
+     * Creates a controller-level {@link Bulletin} with the given category, severity
      * level, and message, so that the Bulletin can be added to the
-     * {@link BulletinRepository}.
+     * {@link BulletinRepository}. Access to this bulletin will be enforce through
+     * permissions on the controller.
      *
-     * @param category
-     * @param severity
-     * @param message
-     * @return
+     * @param category of bulletin
+     * @param severity of bulletin
+     * @param message of bulletin
+     * @return new bulletin
      */
     Bulletin createBulletin(String category, Severity severity, String message);
 
     /**
      * Creates a {@link Bulletin} for the component with the specified
-     * identifier
+     * identifier.
      *
      * @param componentId the ID of the component
      * @param category the name of the bulletin's category
      * @param severity the severity level of the bulletin
      * @param message the bulletin's message
-     * @return
+     * @return new bulletin
      */
     Bulletin createBulletin(String componentId, String category, Severity severity, String message);
 
     /**
-     * Returns the {@link ControllerServiceLookup} which can be used to obtain
+     * @return the {@link ControllerServiceLookup} which can be used to obtain
      * Controller Services
-     *
-     * @return
      */
     ControllerServiceLookup getControllerServiceLookup();
+
+    /**
+     * @return the StateManager that can be used to store and retrieve state for this component
+     */
+    StateManager getStateManager();
+
+    /**
+     * @return <code>true</code> if this instance of NiFi is configured to be part of a cluster, <code>false</code>
+     *         if this instance of NiFi is a standalone instance
+     */
+    boolean isClustered();
+
+    /**
+     * @return the ID of this node in the cluster, or <code>null</code> if either this node is not clustered or the Node Identifier
+     *         has not yet been established
+     */
+    String getClusterNodeIdentifier();
+
+    /**
+     * @return true if reporting analytics (connection status predictions, e.g.) are enabled, false otherwise
+     */
+    default boolean isAnalyticsEnabled() {
+        return false;
+    }
 }

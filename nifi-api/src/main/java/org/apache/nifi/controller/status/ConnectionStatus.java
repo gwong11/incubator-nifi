@@ -16,8 +16,10 @@
  */
 package org.apache.nifi.controller.status;
 
+import org.apache.nifi.controller.status.analytics.ConnectionStatusPredictions;
+import org.apache.nifi.processor.DataUnit;
+
 /**
- * @author unattributed
  */
 public class ConnectionStatus implements Cloneable {
 
@@ -28,12 +30,18 @@ public class ConnectionStatus implements Cloneable {
     private String sourceName;
     private String destinationId;
     private String destinationName;
+    private String backPressureDataSizeThreshold;
+    private ConnectionStatusPredictions predictions;
+    private long backPressureBytesThreshold;
+    private long backPressureObjectThreshold;
     private int inputCount;
     private long inputBytes;
     private int queuedCount;
     private long queuedBytes;
     private int outputCount;
     private long outputBytes;
+    private int maxQueuedCount;
+    private long maxQueuedBytes;
 
     public String getId() {
         return id;
@@ -107,6 +115,31 @@ public class ConnectionStatus implements Cloneable {
         this.destinationName = destinationName;
     }
 
+    public String getBackPressureDataSizeThreshold() {
+        return backPressureDataSizeThreshold;
+    }
+
+    public void setBackPressureDataSizeThreshold(String backPressureDataSizeThreshold) {
+        this.backPressureDataSizeThreshold = backPressureDataSizeThreshold;
+        setBackPressureBytesThreshold(DataUnit.parseDataSize(backPressureDataSizeThreshold, DataUnit.B).longValue());
+    }
+
+    public ConnectionStatusPredictions getPredictions() {
+        return predictions;
+    }
+
+    public void setPredictions(ConnectionStatusPredictions predictions) {
+        this.predictions = predictions;
+    }
+
+    public long getBackPressureObjectThreshold() {
+        return backPressureObjectThreshold;
+    }
+
+    public void setBackPressureObjectThreshold(long backPressureObjectThreshold) {
+        this.backPressureObjectThreshold = backPressureObjectThreshold;
+    }
+
     public long getInputBytes() {
         return inputBytes;
     }
@@ -139,6 +172,30 @@ public class ConnectionStatus implements Cloneable {
         this.outputCount = outputCount;
     }
 
+    public int getMaxQueuedCount() {
+        return maxQueuedCount;
+    }
+
+    public void setMaxQueuedCount(int maxQueuedCount) {
+        this.maxQueuedCount = maxQueuedCount;
+    }
+
+    public long getMaxQueuedBytes() {
+        return maxQueuedBytes;
+    }
+
+    public void setMaxQueuedBytes(long maxQueueBytes) {
+        this.maxQueuedBytes = maxQueueBytes;
+    }
+
+    public long getBackPressureBytesThreshold() {
+        return backPressureBytesThreshold;
+    }
+
+    public void setBackPressureBytesThreshold(long backPressureBytesThreshold) {
+        this.backPressureBytesThreshold = backPressureBytesThreshold;
+    }
+
     @Override
     public ConnectionStatus clone() {
         final ConnectionStatus clonedObj = new ConnectionStatus();
@@ -155,6 +212,15 @@ public class ConnectionStatus implements Cloneable {
         clonedObj.sourceName = sourceName;
         clonedObj.destinationId = destinationId;
         clonedObj.destinationName = destinationName;
+
+        if (predictions != null) {
+            clonedObj.setPredictions(predictions.clone());
+        }
+
+        clonedObj.backPressureDataSizeThreshold = backPressureDataSizeThreshold;
+        clonedObj.backPressureObjectThreshold = backPressureObjectThreshold;
+        clonedObj.maxQueuedBytes = maxQueuedBytes;
+        clonedObj.maxQueuedCount = maxQueuedCount;
         return clonedObj;
     }
 
@@ -175,6 +241,10 @@ public class ConnectionStatus implements Cloneable {
         builder.append(destinationId);
         builder.append(", destinationName=");
         builder.append(destinationName);
+        builder.append(", backPressureDataSizeThreshold=");
+        builder.append(backPressureDataSizeThreshold);
+        builder.append(", backPressureObjectThreshold=");
+        builder.append(backPressureObjectThreshold);
         builder.append(", inputCount=");
         builder.append(inputCount);
         builder.append(", inputBytes=");
@@ -187,6 +257,10 @@ public class ConnectionStatus implements Cloneable {
         builder.append(outputCount);
         builder.append(", outputBytes=");
         builder.append(outputBytes);
+        builder.append(", maxQueuedCount=");
+        builder.append(maxQueuedCount);
+        builder.append(", maxQueueBytes=");
+        builder.append(maxQueuedBytes);
         builder.append("]");
         return builder.toString();
     }

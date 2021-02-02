@@ -16,25 +16,26 @@
  */
 package org.apache.nifi.controller.status;
 
+import org.apache.nifi.registry.flow.VersionedFlowState;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * @author unattributed
  */
 public class ProcessGroupStatus implements Cloneable {
 
     private String id;
     private String name;
+    private VersionedFlowState versionedFlowState;
     private Integer inputCount;
     private Long inputContentSize;
     private Integer outputCount;
     private Long outputContentSize;
-    private long creationTimestamp;
     private Integer activeThreadCount;
+    private Integer terminatedThreadCount;
     private Integer queuedCount;
     private Long queuedContentSize;
     private Long bytesRead;
@@ -43,6 +44,8 @@ public class ProcessGroupStatus implements Cloneable {
     private long bytesReceived;
     private int flowFilesSent;
     private long bytesSent;
+    private int flowFilesTransferred;
+    private long bytesTransferred;
 
     private Collection<ConnectionStatus> connectionStatus = new ArrayList<>();
     private Collection<ProcessorStatus> processorStatus = new ArrayList<>();
@@ -65,6 +68,14 @@ public class ProcessGroupStatus implements Cloneable {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public VersionedFlowState getVersionedFlowState() {
+        return versionedFlowState;
+    }
+
+    public void setVersionedFlowState(VersionedFlowState versionedFlowState) {
+        this.versionedFlowState = versionedFlowState;
     }
 
     public Integer getInputCount() {
@@ -131,20 +142,20 @@ public class ProcessGroupStatus implements Cloneable {
         this.queuedContentSize = queuedContentSize;
     }
 
-    public long getCreationTimestamp() {
-        return creationTimestamp;
-    }
-
-    public void setCreationTimestamp(final long creationTimestamp) {
-        this.creationTimestamp = creationTimestamp;
-    }
-
     public Integer getActiveThreadCount() {
         return activeThreadCount;
     }
 
     public void setActiveThreadCount(final Integer activeThreadCount) {
         this.activeThreadCount = activeThreadCount;
+    }
+
+    public Integer getTerminatedThreadCount() {
+        return terminatedThreadCount;
+    }
+
+    public void setTerminatedThreadCount(Integer terminatedThreadCount) {
+        this.terminatedThreadCount = terminatedThreadCount;
     }
 
     public Collection<ConnectionStatus> getConnectionStatus() {
@@ -227,12 +238,27 @@ public class ProcessGroupStatus implements Cloneable {
         this.bytesSent = bytesSent;
     }
 
+    public int getFlowFilesTransferred() {
+        return flowFilesTransferred;
+    }
+
+    public void setFlowFilesTransferred(int flowFilesTransferred) {
+        this.flowFilesTransferred = flowFilesTransferred;
+    }
+
+    public long getBytesTransferred() {
+        return bytesTransferred;
+    }
+
+    public void setBytesTransferred(long bytesTransferred) {
+        this.bytesTransferred = bytesTransferred;
+    }
+
     @Override
     public ProcessGroupStatus clone() {
 
         final ProcessGroupStatus clonedObj = new ProcessGroupStatus();
 
-        clonedObj.creationTimestamp = creationTimestamp;
         clonedObj.id = id;
         clonedObj.name = name;
         clonedObj.outputContentSize = outputContentSize;
@@ -240,6 +266,7 @@ public class ProcessGroupStatus implements Cloneable {
         clonedObj.inputContentSize = inputContentSize;
         clonedObj.inputCount = inputCount;
         clonedObj.activeThreadCount = activeThreadCount;
+        clonedObj.terminatedThreadCount = terminatedThreadCount;
         clonedObj.queuedContentSize = queuedContentSize;
         clonedObj.queuedCount = queuedCount;
         clonedObj.bytesRead = bytesRead;
@@ -248,6 +275,8 @@ public class ProcessGroupStatus implements Cloneable {
         clonedObj.bytesReceived = bytesReceived;
         clonedObj.flowFilesSent = flowFilesSent;
         clonedObj.bytesSent = bytesSent;
+        clonedObj.flowFilesTransferred = flowFilesTransferred;
+        clonedObj.bytesTransferred = bytesTransferred;
 
         if (connectionStatus != null) {
             final Collection<ConnectionStatus> statusList = new ArrayList<>();
@@ -313,10 +342,22 @@ public class ProcessGroupStatus implements Cloneable {
         builder.append(outputCount);
         builder.append(", outputBytes=");
         builder.append(outputContentSize);
-        builder.append(", creationTimestamp=");
-        builder.append(creationTimestamp);
         builder.append(", activeThreadCount=");
         builder.append(activeThreadCount);
+        builder.append(", terminatedThreadCount=");
+        builder.append(terminatedThreadCount);
+        builder.append(", flowFilesTransferred=");
+        builder.append(flowFilesTransferred);
+        builder.append(", bytesTransferred=");
+        builder.append(bytesTransferred);
+        builder.append(", flowFilesReceived=");
+        builder.append(flowFilesReceived);
+        builder.append(", bytesReceived=");
+        builder.append(bytesReceived);
+        builder.append(", flowFilesSent=");
+        builder.append(flowFilesSent);
+        builder.append(", bytesSent=");
+        builder.append(bytesSent);
         builder.append(",\n\tconnectionStatus=");
 
         for (final ConnectionStatus status : connectionStatus) {
@@ -374,6 +415,18 @@ public class ProcessGroupStatus implements Cloneable {
         target.setBytesRead(target.getBytesRead() + toMerge.getBytesRead());
         target.setBytesWritten(target.getBytesWritten() + toMerge.getBytesWritten());
         target.setActiveThreadCount(target.getActiveThreadCount() + toMerge.getActiveThreadCount());
+        target.setTerminatedThreadCount(target.getTerminatedThreadCount() + toMerge.getTerminatedThreadCount());
+        target.setFlowFilesTransferred(target.getFlowFilesTransferred() + toMerge.getFlowFilesTransferred());
+        target.setBytesTransferred(target.getBytesTransferred() + toMerge.getBytesTransferred());
+        target.setFlowFilesReceived(target.getFlowFilesReceived() + toMerge.getFlowFilesReceived());
+        target.setBytesReceived(target.getBytesReceived() + toMerge.getBytesReceived());
+        target.setFlowFilesSent(target.getFlowFilesSent() + toMerge.getFlowFilesSent());
+        target.setBytesSent(target.getBytesSent() + toMerge.getBytesSent());
+
+        // if the versioned flow state to merge is sync failure allow it to take precedence.
+        if (VersionedFlowState.SYNC_FAILURE.equals(toMerge.getVersionedFlowState())) {
+            target.setVersionedFlowState(VersionedFlowState.SYNC_FAILURE);
+        }
 
         // connection status
         // sort by id
@@ -412,6 +465,7 @@ public class ProcessGroupStatus implements Cloneable {
             }
 
             merged.setActiveThreadCount(merged.getActiveThreadCount() + statusToMerge.getActiveThreadCount());
+            merged.setTerminatedThreadCount(merged.getTerminatedThreadCount() + statusToMerge.getTerminatedThreadCount());
             merged.setBytesRead(merged.getBytesRead() + statusToMerge.getBytesRead());
             merged.setBytesWritten(merged.getBytesWritten() + statusToMerge.getBytesWritten());
             merged.setInputBytes(merged.getInputBytes() + statusToMerge.getInputBytes());
@@ -420,13 +474,16 @@ public class ProcessGroupStatus implements Cloneable {
             merged.setOutputBytes(merged.getOutputBytes() + statusToMerge.getOutputBytes());
             merged.setOutputCount(merged.getOutputCount() + statusToMerge.getOutputCount());
             merged.setProcessingNanos(merged.getProcessingNanos() + statusToMerge.getProcessingNanos());
+            merged.setFlowFilesRemoved(merged.getFlowFilesRemoved() + statusToMerge.getFlowFilesRemoved());
 
             // if the status to merge is invalid allow it to take precedence. whether the
             // processor run status is disabled/stopped/running is part of the flow configuration
             // and should not differ amongst nodes. however, whether a processor is invalid
             // can be driven by environmental conditions. this check allows any of those to
-            // take precedence over the configured run status. 
-            if (RunStatus.Invalid.equals(statusToMerge.getRunStatus())) {
+            // take precedence over the configured run status.
+            if (RunStatus.Validating.equals(statusToMerge.getRunStatus())) {
+                merged.setRunStatus(RunStatus.Validating);
+            } else if (RunStatus.Invalid.equals(statusToMerge.getRunStatus())) {
                 merged.setRunStatus(RunStatus.Invalid);
             }
         }
@@ -454,7 +511,7 @@ public class ProcessGroupStatus implements Cloneable {
                 merged.setTransmitting(true);
             }
 
-            // should be unnecessary here since ports run status should not be affected by 
+            // should be unnecessary here since ports run status should not be affected by
             // environmental conditions but doing so in case that changes
             if (RunStatus.Invalid.equals(statusToMerge.getRunStatus())) {
                 merged.setRunStatus(RunStatus.Invalid);
@@ -484,7 +541,7 @@ public class ProcessGroupStatus implements Cloneable {
                 merged.setTransmitting(true);
             }
 
-            // should be unnecessary here since ports run status not should be affected by 
+            // should be unnecessary here since ports run status not should be affected by
             // environmental conditions but doing so in case that changes
             if (RunStatus.Invalid.equals(statusToMerge.getRunStatus())) {
                 merged.setRunStatus(RunStatus.Invalid);
@@ -528,18 +585,6 @@ public class ProcessGroupStatus implements Cloneable {
             merged.setSentContentSize(merged.getSentContentSize() + statusToMerge.getSentContentSize());
             merged.setSentCount(merged.getSentCount() + statusToMerge.getSentCount());
             merged.setActiveThreadCount(merged.getActiveThreadCount() + statusToMerge.getActiveThreadCount());
-
-            List<String> mergedAuthenticationIssues = merged.getAuthorizationIssues();
-            if (mergedAuthenticationIssues == null) {
-                mergedAuthenticationIssues = new ArrayList<>();
-            }
-
-            final List<String> nodeAuthorizationIssues = statusToMerge.getAuthorizationIssues();
-            if (nodeAuthorizationIssues != null && !nodeAuthorizationIssues.isEmpty()) {
-                mergedAuthenticationIssues.addAll(nodeAuthorizationIssues);
-            }
-
-            merged.setAuthorizationIssues(mergedAuthenticationIssues);
         }
 
         target.setRemoteProcessGroupStatus(mergedRemoteGroupMap.values());

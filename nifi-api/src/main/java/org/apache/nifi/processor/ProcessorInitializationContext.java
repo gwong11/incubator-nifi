@@ -17,37 +17,39 @@
 package org.apache.nifi.processor;
 
 import org.apache.nifi.controller.ControllerServiceLookup;
-import org.apache.nifi.logging.ProcessorLog;
+import org.apache.nifi.controller.NodeTypeProvider;
+import org.apache.nifi.kerberos.KerberosContext;
+import org.apache.nifi.logging.ComponentLog;
 
 /**
  * <p>
  * The <code>ProcessorInitializationContext</code> provides
- * {@link nifi.processor.Processor Processor}s access to objects that may be of
- * use throughout the life of the Processor.
+ * {@link org.apache.nifi.processor.Processor Processor}s access to objects that
+ * may be of use throughout the life of the Processor.
  * </p>
  */
-public interface ProcessorInitializationContext {
+public interface ProcessorInitializationContext extends KerberosContext {
 
     /**
-     * Returns the unique identifier for this processor
-     *
-     * @return
+     * @return the unique identifier for this processor
      */
     String getIdentifier();
 
     /**
-     * Returns a {@link ProcessorLog} that is tied to this processor that can be
+     * @return a {@link ComponentLog} that is tied to this processor that can be
      * used to log events
-     *
-     * @return
      */
-    ProcessorLog getLogger();
+    ComponentLog getLogger();
 
     /**
-     * Returns the {@link ControllerServiceLookup} which can be used to obtain
+     * @return the {@link ControllerServiceLookup} which can be used to obtain
      * Controller Services
-     *
-     * @return
      */
     ControllerServiceLookup getControllerServiceLookup();
+
+    /**
+     * @return the {@link NodeTypeProvider} which can be used to detect the node
+     * type of this NiFi instance.
+     */
+    NodeTypeProvider getNodeTypeProvider();
 }

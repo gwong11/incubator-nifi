@@ -16,23 +16,52 @@
  */
 package org.apache.nifi.util;
 
-import java.util.Map;
-import java.util.Set;
-
+import org.apache.nifi.parameter.ExpressionLanguageAgnosticParameterParser;
+import org.apache.nifi.parameter.ParameterLookup;
+import org.apache.nifi.attribute.expression.language.Query;
+import org.apache.nifi.attribute.expression.language.Query.Range;
 import org.apache.nifi.attribute.expression.language.StandardExpressionLanguageCompiler;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.state.StateManager;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.controller.ControllerServiceLookup;
 import org.apache.nifi.expression.ExpressionLanguageCompiler;
+import org.apache.nifi.parameter.ParameterParser;
+import org.apache.nifi.parameter.ParameterReference;
+import org.apache.nifi.parameter.ExpressionLanguageAwareParameterParser;
+import org.apache.nifi.registry.VariableRegistry;
 
-public class MockValidationContext implements ValidationContext, ControllerServiceLookup {
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+public class MockValidationContext extends MockControllerServiceLookup implements ValidationContext, ControllerServiceLookup {
 
     private final MockProcessContext context;
+    private final Map<String, Boolean> expressionLanguageSupported;
+    private final StateManager stateManager;
+    private final VariableRegistry variableRegistry;
 
     public MockValidationContext(final MockProcessContext processContext) {
+        this(processContext, null, VariableRegistry.EMPTY_REGISTRY);
+    }
+
+    public MockValidationContext(final MockProcessContext processContext, final StateManager stateManager, final VariableRegistry variableRegistry) {
         this.context = processContext;
+        this.stateManager = stateManager;
+        this.variableRegistry = variableRegistry;
+
+        final Map<PropertyDescriptor, String> properties = processContext.getProperties();
+        expressionLanguageSupported = new HashMap<>(properties.size());
+        for (final PropertyDescriptor descriptor : properties.keySet()) {
+            expressionLanguageSupported.put(descriptor.getName(), descriptor.isExpressionLanguageSupported());
+        }
     }
 
     @Override
@@ -42,18 +71,18 @@ public class MockValidationContext implements ValidationContext, ControllerServi
 
     @Override
     public PropertyValue newPropertyValue(final String rawValue) {
-        return new MockPropertyValue(rawValue, this);
+        return new MockPropertyValue(rawValue, this, variableRegistry);
     }
 
     @Override
     public ExpressionLanguageCompiler newExpressionLanguageCompiler() {
-        return new StandardExpressionLanguageCompiler();
+        return new StandardExpressionLanguageCompiler(variableRegistry, ParameterLookup.EMPTY);
     }
 
     @Override
     public ValidationContext getControllerServiceValidationContext(final ControllerService controllerService) {
-        final MockProcessContext serviceProcessContext = new MockProcessContext(controllerService, context);
-        return new MockValidationContext(serviceProcessContext);
+        final MockProcessContext serviceProcessContext = new MockProcessContext(controllerService, context, stateManager, variableRegistry);
+        return new MockValidationContext(serviceProcessContext, stateManager, variableRegistry);
     }
 
     @Override
@@ -67,12 +96,21 @@ public class MockValidationContext implements ValidationContext, ControllerServi
     }
 
     @Override
+    public Map<String, String> getAllProperties() {
+        final Map<String,String> propValueMap = new LinkedHashMap<>();
+        for (final Map.Entry<PropertyDescriptor, String> entry : getProperties().entrySet()) {
+            propValueMap.put(entry.getKey().getName(), entry.getValue());
+        }
+        return propValueMap;
+    }
+
+    @Override
     public String getAnnotationData() {
         return context.getAnnotationData();
     }
 
     @Override
-    public Set<String> getControllerServiceIdentifiers(Class<? extends ControllerService> serviceType) {
+    public Set<String> getControllerServiceIdentifiers(final Class<? extends ControllerService> serviceType) {
         return context.getControllerServiceIdentifiers(serviceType);
     }
 
@@ -90,4 +128,65 @@ public class MockValidationContext implements ValidationContext, ControllerServi
     public boolean isControllerServiceEnabled(final ControllerService service) {
         return context.isControllerServiceEnabled(service);
     }
+
+    @Override
+    public String getControllerServiceName(final String serviceIdentifier) {
+        final ControllerServiceConfiguration configuration = context.getConfiguration(serviceIdentifier);
+        return configuration == null ? null : serviceIdentifier;
+    }
+
+    @Override
+    public boolean isValidationRequired(final ControllerService service) {
+        return true;
+    }
+
+    @Override
+    public boolean isControllerServiceEnabling(final String serviceIdentifier) {
+        return context.isControllerServiceEnabling(serviceIdentifier);
+    }
+
+    @Override
+    public boolean isExpressionLanguagePresent(final String value) {
+        if (value == null) {
+            return false;
+        }
+
+        final List<Range> elRanges = Query.extractExpressionRanges(value);
+        return (elRanges != null && !elRanges.isEmpty());
+    }
+
+    @Override
+    public boolean isExpressionLanguageSupported(final String propertyName) {
+        final Boolean supported = expressionLanguageSupported.get(propertyName);
+        return Boolean.TRUE.equals(supported);
+    }
+
+    @Override
+    public String getProcessGroupIdentifier() {
+        return "unit test";
+    }
+
+    @Override
+    public Collection<String> getReferencedParameters(final String propertyName) {
+        final String rawPropertyValue = context.getProperty(propertyName).getValue();
+        final boolean elSupported = isExpressionLanguageSupported(propertyName);
+
+        final ParameterParser parser = elSupported ? new ExpressionLanguageAwareParameterParser() : new ExpressionLanguageAgnosticParameterParser();
+
+        final List<ParameterReference> references = parser.parseTokens(rawPropertyValue).toReferenceList();
+        return references.stream()
+            .map(ParameterReference::getParameterName)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean isParameterDefined(final String parameterName) {
+        return true;
+    }
+
+    @Override
+    public boolean isParameterSet(final String parameterName) {
+        return true;
+    }
+
 }

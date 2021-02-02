@@ -18,8 +18,11 @@ package org.apache.nifi.util;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.apache.nifi.action.Action;
 import org.apache.nifi.controller.status.ProcessGroupStatus;
 import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.provenance.ProvenanceEventRepository;
@@ -29,14 +32,24 @@ public class MockEventAccess implements EventAccess {
 
     private ProcessGroupStatus processGroupStatus;
     private final List<ProvenanceEventRecord> provenanceRecords = new ArrayList<>();
+    private final List<Action> flowChanges = new ArrayList<>();
+    private final Map<String, ProcessGroupStatus> processGroupStatusMap = new HashMap<>();
 
     public void setProcessGroupStatus(final ProcessGroupStatus status) {
         this.processGroupStatus = status;
+    }
+    public void setProcessGroupStatus(String groupId, final ProcessGroupStatus status) {
+        processGroupStatusMap.put(groupId, status);
     }
 
     @Override
     public ProcessGroupStatus getControllerStatus() {
         return processGroupStatus;
+    }
+
+    @Override
+    public ProcessGroupStatus getGroupStatus(final String groupId) {
+        return processGroupStatusMap.get(groupId);
     }
 
     @Override
@@ -67,4 +80,29 @@ public class MockEventAccess implements EventAccess {
     public ProvenanceEventRepository getProvenanceRepository() {
         return null;
     }
+
+    @Override
+    public List<Action> getFlowChanges(int firstActionId, int maxActions) {
+        if (firstActionId < 0 || maxActions < 1) {
+            throw new IllegalArgumentException();
+        }
+
+        final List<Action> actions = new ArrayList<>();
+
+        for (final Action action : flowChanges) {
+            if (action.getId() >= firstActionId) {
+                actions.add(action);
+                if (actions.size() >= maxActions) {
+                    return actions;
+                }
+            }
+        }
+
+        return actions;
+    }
+
+    public void addFlowChange(final Action action) {
+        this.flowChanges.add(action);
+    }
+
 }

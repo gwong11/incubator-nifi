@@ -46,7 +46,6 @@ import org.apache.nifi.processor.exception.ProcessException;
  * default no-args constructor to facilitate the java service loader
  * mechanism.</p>
  *
- * @author none
  */
 public interface Processor extends ConfigurableComponent {
 
@@ -54,7 +53,7 @@ public interface Processor extends ConfigurableComponent {
      * Provides the processor with access to objects that may be of use
      * throughout the life of the Processor
      *
-     * @param context
+     * @param context of initialization
      */
     void initialize(ProcessorInitializationContext context);
 
@@ -68,8 +67,9 @@ public interface Processor extends ConfigurableComponent {
     /**
      * <p>
      * The method called when this processor is triggered to operate by the
-     * controller. This method may be called concurrently from different
-     * threads. When this method is called depends on how this processor is
+     * controller. In the absence of the {@link org.apache.nifi.annotation.behavior.TriggerSerially} annotation,
+     * this method may be called concurrently from different threads.
+     * When this method is called depends on how this processor is
      * configured within a controller to be triggered (timing or event
      * based).</p>
      *

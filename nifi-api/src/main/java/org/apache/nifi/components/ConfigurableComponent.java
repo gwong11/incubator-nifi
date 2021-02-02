@@ -19,27 +19,27 @@ package org.apache.nifi.components;
 import java.util.Collection;
 import java.util.List;
 
+import org.apache.nifi.annotation.lifecycle.OnConfigurationRestored;
+
 public interface ConfigurableComponent {
 
     /**
      * Validates a set of properties, returning ValidationResults for any
      * invalid properties. All defined properties will be validated. If they are
-     * not included in the in the purposed configuration, the default value will
+     * not included in the purposed configuration, the default value will
      * be used.
      *
-     * @param context
+     * @param context of validation
      * @return Collection of validation result objects for any invalid findings
-     * only. If the collection is empty then the component is valid. Guaranteed
-     * non-null
+     *         only. If the collection is empty then the component is valid. Guaranteed
+     *         non-null
      */
     Collection<ValidationResult> validate(ValidationContext context);
 
     /**
-     * Returns the PropertyDescriptor with the given name, if it exists;
-     * otherwise, returns <code>null</code>.
-     *
-     * @param name
-     * @return
+     * @param name to lookup the descriptor
+     * @return the PropertyDescriptor with the given name, if it exists;
+     * otherwise, returns <code>null</code>
      */
     PropertyDescriptor getPropertyDescriptor(String name);
 
@@ -51,11 +51,19 @@ public interface ConfigurableComponent {
      * necessary lazily evaluate it. Any throwable that escapes this method will
      * simply be ignored.
      *
-     * @param descriptor
+     * When NiFi is restarted, this method will be called for each 'dynamic' property that is
+     * added, as well as for each property that is not set to the default value. I.e., if the
+     * Properties are modified from the default values. If it is undesirable for your use case
+     * to react to properties being modified in this situation, you can add the {@link OnConfigurationRestored}
+     * annotation to a method - this will allow the Processor to know when configuration has
+     * been restored, so that it can determine whether or not to perform some action in the
+     * onPropertyModified method.
+     *
+     * @param descriptor the descriptor for the property being modified
      * @param oldValue the value that was previously set, or null if no value
-     * was previously set for this property
+     *            was previously set for this property
      * @param newValue the new property value or if null indicates the property
-     * was removed
+     *            was removed
      */
     void onPropertyModified(PropertyDescriptor descriptor, String oldValue, String newValue);
 
@@ -68,10 +76,9 @@ public interface ConfigurableComponent {
     List<PropertyDescriptor> getPropertyDescriptors();
 
     /**
-     * Returns the unique identifier that the framework assigned to this
+     * @return the unique identifier that the framework assigned to this
      * component
-     *
-     * @return
      */
     String getIdentifier();
+
 }

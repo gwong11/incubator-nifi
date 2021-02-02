@@ -21,12 +21,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.controller.ControllerServiceLookup;
 
 public abstract class MockControllerServiceLookup implements ControllerServiceLookup {
 
     private final Map<String, ControllerServiceConfiguration> controllerServiceMap = new ConcurrentHashMap<>();
+
+    public Map<String, ControllerServiceConfiguration> getControllerServices() {
+        return controllerServiceMap;
+    }
 
     public ControllerServiceConfiguration addControllerService(final ControllerService service, final String identifier) {
         final ControllerServiceConfiguration config = new ControllerServiceConfiguration(service);
@@ -36,6 +41,19 @@ public abstract class MockControllerServiceLookup implements ControllerServiceLo
 
     public ControllerServiceConfiguration addControllerService(final ControllerService service) {
         return addControllerService(service, service.getIdentifier());
+    }
+
+    public void removeControllerService(final ControllerService service) {
+        final ControllerService canonical = getControllerService(service.getIdentifier());
+        if (canonical == null || canonical != service) {
+            throw new IllegalArgumentException("Controller Service " + service + " is not known");
+        }
+
+        controllerServiceMap.remove(service.getIdentifier());
+    }
+
+    protected void addControllerServices(final MockControllerServiceLookup other) {
+        this.controllerServiceMap.putAll(other.controllerServiceMap);
     }
 
     protected ControllerServiceConfiguration getConfiguration(final String identifier) {
@@ -64,6 +82,11 @@ public abstract class MockControllerServiceLookup implements ControllerServiceLo
     }
 
     @Override
+    public boolean isControllerServiceEnabling(final String serviceIdentifier) {
+        return false;
+    }
+
+    @Override
     public Set<String> getControllerServiceIdentifiers(final Class<? extends ControllerService> serviceType) {
         final Set<String> ids = new HashSet<>();
         for (final Map.Entry<String, ControllerServiceConfiguration> entry : controllerServiceMap.entrySet()) {
@@ -72,5 +95,15 @@ public abstract class MockControllerServiceLookup implements ControllerServiceLo
             }
         }
         return ids;
+    }
+
+    @Override
+    public String getControllerServiceName(final String serviceIdentifier) {
+        final ControllerServiceConfiguration status = controllerServiceMap.get(serviceIdentifier);
+        return status == null ? null : serviceIdentifier;
+    }
+
+    public InputRequirement getInputRequirement() {
+        return null;
     }
 }

@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.apache.nifi.controller.queue.QueueSize;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.exception.FlowFileAccessException;
 import org.apache.nifi.processor.exception.FlowFileHandlingException;
@@ -42,11 +43,13 @@ import org.apache.nifi.provenance.ProvenanceReporter;
  * session is always tied to a single processor at any one time and ensures no
  * FlowFile can ever be accessed by any more than one processor at a given time.
  * The session also ensures that all FlowFiles are always accounted for. The
- * creator of a ProcessSession is always required to manage the session.</p>
+ * creator of a ProcessSession is always required to manage the session.
+ * </p>
  *
  * <p>
  * A session is not considered thread safe. The session supports a unit of work
- * that is either committed or rolled back</p>
+ * that is either committed or rolled back
+ * </p>
  *
  * <p>
  * As noted on specific methods and for specific exceptions automated rollback
@@ -54,13 +57,22 @@ import org.apache.nifi.provenance.ProvenanceReporter;
  * situations can result in exceptions yet not cause automated rollback. In
  * these cases the consistency of the repository will be retained but callers
  * will be able to indicate whether it should result in rollback or continue on
- * toward a commit.</p>
+ * toward a commit.
+ * </p>
  *
  * <p>
- * A process session instance may be used continuously. That is, after each
- * commit or rollback, the session can be used again.</p>
- *
- * @author unattributed
+ * A process session has two 'terminal' methods that will result in the process session
+ * being in a 'fresh', containing no knowledge or any FlowFile, as if the session were newly
+ * created. After one of these methods is called, the instance may be used again. The terminal
+ * methods for a Process Session are the {@link #commit()} and {@link #rollback()}. Additionally,
+ * the {@link #migrate(ProcessSession, Collection)} method results in {@code this} containing
+ * no knowledge of any of the FlowFiles that are provided, as if the FlowFiles never existed in
+ * this ProcessSession. After each commit or rollback, the session can be used again. Note, however,
+ * that even if all FlowFiles are migrated via the {@link #migrate(ProcessSession, Collection)} method,
+ * this Process Session is not entirely cleared, as it still has knowledge of Counters that were adjusted
+ * via the {@link #adjustCounter(String, long, boolean)} method. A commit or rollback will clear these
+ * counters, as well.
+ * </p>
  */
 public interface ProcessSession {
 
@@ -109,6 +121,39 @@ public interface ProcessSession {
     void rollback(boolean penalize);
 
     /**
+     * <p>
+     * Migrates ownership of the given FlowFiles from {@code this} to the given {@code newOwner}.
+     * </p>
+     *
+     * <p>
+     * When calling this method, all of the following pre-conditions must be met:
+     * </p>
+     *
+     * <ul>
+     * <li>This method cannot be called from within a callback
+     * (see {@link #write(FlowFile, OutputStreamCallback)}, {@link #write(FlowFile, StreamCallback)},
+     * {@link #read(FlowFile, InputStreamCallback)}, {@link #read(FlowFile, boolean, InputStreamCallback)} for any of
+     * the given FlowFiles.</li>
+     * <li>No InputStream can be open for the content of any of the given FlowFiles (see {@link #read(FlowFile)}).</li>
+     * <li>No OutputStream can be open for the content of any of the given FlowFiles (see {@link #write(FlowFile)}.</li>
+     * <li>For any provided FlowFile, if the FlowFile has any child (e.g., by calling {@link #create(FlowFile)} and passing the FlowFile
+     * as the argument), then all children that were created must also be in the Collection of provided FlowFiles.</li>
+     * </ul>
+     *
+     * <p>
+     * Also note, that if any FlowFile given is not the most up-to-date version of that FlowFile, then the most up-to-date
+     * version of the FlowFile will be migrated to the new owner. For example, if a call to {@link #putAttribute(FlowFile, String, String)} is made,
+     * passing <code>flowFile1</code> as the FlowFile, and then <code>flowFile1</code> is passed to this method, then the newest version (including the
+     * newly added attribute) will be migrated, not the outdated version of the FlowFile that <code>flowFile1</code> points to.
+     * </p>
+     *
+     * @param newOwner the ProcessSession that is to become the new owner of all FlowFiles
+     *            that currently belong to {@code this}.
+     * @param flowFiles the FlowFiles to migrate
+     */
+    void migrate(ProcessSession newOwner, Collection<FlowFile> flowFiles);
+
+    /**
      * Adjusts counter data for the given counter name and takes care of
      * registering the counter if not already present. The adjustment occurs
      * only if and when the ProcessSession is committed.
@@ -116,9 +161,9 @@ public interface ProcessSession {
      * @param name the name of the counter
      * @param delta the delta by which to modify the counter (+ or -)
      * @param immediate if true, the counter will be updated immediately,
-     * without regard to whether the ProcessSession is commit or rolled back;
-     * otherwise, the counter will be incremented only if and when the
-     * ProcessSession is committed.
+     *            without regard to whether the ProcessSession is commit or rolled back;
+     *            otherwise, the counter will be incremented only if and when the
+     *            ProcessSession is committed.
      */
     void adjustCounter(String name, long delta, boolean immediate);
 
@@ -136,7 +181,8 @@ public interface ProcessSession {
      * single call.
      *
      * @param maxResults the maximum number of FlowFiles to return
-     * @return
+     * @return up to <code>maxResults</code> FlowFiles from the work queue. If
+     * no FlowFiles are available, returns an empty list. Will not return null.
      * @throws IllegalArgumentException if <code>maxResults</code> is less than
      * 0
      */
@@ -152,8 +198,9 @@ public interface ProcessSession {
      * returned.
      * </p>
      *
-     * @param filter
-     * @return
+     * @param filter to limit which flow files are returned
+     * @return all FlowFiles from all of the incoming queues for which the given
+     * {@link FlowFileFilter} indicates should be accepted.
      */
     List<FlowFile> get(FlowFileFilter filter);
 
@@ -166,17 +213,11 @@ public interface ProcessSession {
     QueueSize getQueueSize();
 
     /**
-     * @return the set of all relationships for which space is available to
-     * receive new objects
-     */
-    Set<Relationship> getAvailableRelationships();
-
-    /**
      * Creates a new FlowFile in the repository with no content and without any
      * linkage to a parent FlowFile. This method is appropriate only when data
      * is received or created from an external system. Otherwise, this method
      * should be avoided and should instead use {@link #create(FlowFile)} or
-     * {@link #create(Collection<FlowFile>)}.
+     * {@see #create(Collection)}.
      *
      * When this method is used, a Provenance CREATE or RECEIVE Event should be
      * generated. See the {@link #getProvenanceReporter()} method and
@@ -194,8 +235,8 @@ public interface ProcessSession {
      * event, depending on whether or not other FlowFiles are generated from the
      * same parent before the ProcessSession is committed.
      *
-     * @param parent
-     * @return
+     * @param parent to base the new flowfile on
+     * @return newly created flowfile
      */
     FlowFile create(FlowFile parent);
 
@@ -207,8 +248,8 @@ public interface ProcessSession {
      * only a single parent exists). This method will automatically generate a
      * Provenance JOIN event.
      *
-     * @param parents
-     * @return
+     * @param parents which the new flowfile should inherit shared attributes from
+     * @return new flowfile
      */
     FlowFile create(Collection<FlowFile> parents);
 
@@ -245,9 +286,9 @@ public interface ProcessSession {
      * Event, if the offset is 0 and the size is exactly equal to the size of
      * the example FlowFile).
      *
-     * @param example
-     * @param offset
-     * @param size
+     * @param parent to base the new flowfile attributes on
+     * @param offset of the parent flowfile to base the child flowfile content on
+     * @param size of the new flowfile from the offset
      * @return a FlowFile with the specified size whose parent is first argument
      * to this function
      *
@@ -256,14 +297,14 @@ public interface ProcessSession {
      * the given FlowFile
      * @throws FlowFileHandlingException if the given FlowFile is already
      * transferred or removed or doesn't belong to this session, or if the
-     * specified offset + size exceeds that of the size of the example FlowFile.
+     * specified offset + size exceeds that of the size of the parent FlowFile.
      * Automatic rollback will occur.
      * @throws MissingFlowFileException if the given FlowFile content cannot be
      * found. The FlowFile should no longer be reference, will be internally
      * destroyed, and the session is automatically rolled back and what is left
      * of the FlowFile is destroyed.
      */
-    FlowFile clone(FlowFile example, long offset, long size);
+    FlowFile clone(FlowFile parent, long offset, long size);
 
     /**
      * Sets a penalty for the given FlowFile which will make it unavailable to
@@ -374,8 +415,8 @@ public interface ProcessSession {
      * destination processor will have immediate visibility of the transferred
      * FlowFiles within the session.
      *
-     * @param flowFile
-     * @param relationship
+     * @param flowFile to transfer
+     * @param relationship to transfer to
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -395,7 +436,7 @@ public interface ProcessSession {
      * the FlowFile will be maintained. FlowFiles that are created by the
      * processor cannot be transferred back to themselves via this method.
      *
-     * @param flowFile
+     * @param flowFile to transfer
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -416,7 +457,7 @@ public interface ProcessSession {
      * created by the processor cannot be transferred back to themselves via
      * this method.
      *
-     * @param flowFiles
+     * @param flowFiles to transfer
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -441,8 +482,8 @@ public interface ProcessSession {
      * destination processor will have immediate visibility of the transferred
      * FlowFiles within the session.
      *
-     * @param flowFiles
-     * @param relationship
+     * @param flowFiles to transfer
+     * @param relationship to transfer to
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -461,7 +502,7 @@ public interface ProcessSession {
      * nothing else references it and this FlowFile will no longer be available
      * for further operation.
      *
-     * @param flowFile
+     * @param flowFile to remove
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -477,7 +518,7 @@ public interface ProcessSession {
      * nothing else references it and this FlowFile will no longer be available
      * for further operation.
      *
-     * @param flowFiles
+     * @param flowFiles to remove
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -491,29 +532,92 @@ public interface ProcessSession {
      * Executes the given callback against the contents corresponding to the
      * given FlowFile.
      *
-     * @param source
-     * @param reader
+     * @param source flowfile to retrieve content of
+     * @param reader that will be called to read the flowfile content
      * @throws IllegalStateException if detected that this method is being
-     * called from within a callback of another method in this session and for
-     * the given FlowFile(s)
+     *             called from within a write callback of another method (i.e., from within the callback
+     *             that is passed to {@link #write(FlowFile, OutputStreamCallback)} or {@link #write(FlowFile, StreamCallback)})
+     *             or has an OutputStream open (via a call to {@link #write(FlowFile)}) in this session and for
+     *             the given FlowFile(s). Said another way, it is not permissible to call this method while writing to
+     *             the same FlowFile.
      * @throws FlowFileHandlingException if the given FlowFile is already
-     * transferred or removed or doesn't belong to this session. Automatic
-     * rollback will occur.
+     *             transferred or removed or doesn't belong to this session. Automatic
+     *             rollback will occur.
      * @throws MissingFlowFileException if the given FlowFile content cannot be
-     * found. The FlowFile should no longer be reference, will be internally
-     * destroyed, and the session is automatically rolled back and what is left
-     * of the FlowFile is destroyed.
+     *             found. The FlowFile should no longer be referenced, will be internally
+     *             destroyed, and the session is automatically rolled back and what is left
+     *             of the FlowFile is destroyed.
      * @throws FlowFileAccessException if some IO problem occurs accessing
-     * FlowFile content
+     *             FlowFile content; if an attempt is made to access the InputStream
+     *             provided to the given InputStreamCallback after this method completed its
+     *             execution
      */
-    void read(FlowFile source, InputStreamCallback reader);
+    void read(FlowFile source, InputStreamCallback reader) throws FlowFileAccessException;
+
+    /**
+     * Provides an InputStream that can be used to read the contents of the given FlowFile.
+     * This method differs from those that make use of callbacks in that this method returns
+     * an InputStream and expects the caller to properly handle the lifecycle of the InputStream
+     * (i.e., the caller is responsible for ensuring that the InputStream is closed appropriately).
+     * The Process Session may or may not handle closing the stream when {@link #commit()} or {@link #rollback()}
+     * is called, but the responsibility of doing so belongs to the caller. The InputStream will throw
+     * an IOException if an attempt is made to read from the stream after the session is committed or
+     * rolled back.
+     *
+     * @param flowFile the FlowFile to read
+     * @return an InputStream that can be used to read the contents of the FlowFile
+     * @throws IllegalStateException if detected that this method is being
+     *             called from within a write callback of another method (i.e., from within the callback
+     *             that is passed to {@link #write(FlowFile, OutputStreamCallback)} or {@link #write(FlowFile, StreamCallback)})
+     *             or has an OutputStream open (via a call to {@link #write(FlowFile)}) in this session and for
+     *             the given FlowFile(s). Said another way, it is not permissible to call this method while writing to
+     *             the same FlowFile.
+     * @throws FlowFileHandlingException if the given FlowFile is already
+     *             transferred or removed or doesn't belong to this session. Automatic
+     *             rollback will occur.
+     * @throws MissingFlowFileException if the given FlowFile content cannot be
+     *             found. The FlowFile should no longer be referenced, will be internally
+     *             destroyed, and the session is automatically rolled back and what is left
+     *             of the FlowFile is destroyed.
+     */
+    InputStream read(FlowFile flowFile);
+
+    /**
+     * Executes the given callback against the contents corresponding to the
+     * given FlowFile.
+     *
+     * <i>Note</i>: The OutputStream provided to the given OutputStreamCallback
+     * will not be accessible once this method has completed its execution.
+     *
+     * @param source flowfile to retrieve content of
+     * @param allowSessionStreamManagement allow session to hold the stream open for performance reasons
+     * @param reader that will be called to read the flowfile content
+     * @throws IllegalStateException if detected that this method is being
+     *             called from within a write callback of another method (i.e., from within the callback
+     *             that is passed to {@link #write(FlowFile, OutputStreamCallback)} or {@link #write(FlowFile, StreamCallback)})
+     *             or has an OutputStream open (via a call to {@link #write(FlowFile)}) in this session and for
+     *             the given FlowFile(s). Said another way, it is not permissible to call this method while writing to
+     *             the same FlowFile.
+     * @throws FlowFileHandlingException if the given FlowFile is already
+     *             transferred or removed or doesn't belong to this session. Automatic
+     *             rollback will occur.
+     * @throws MissingFlowFileException if the given FlowFile content cannot be
+     *             found. The FlowFile should no longer be reference, will be internally
+     *             destroyed, and the session is automatically rolled back and what is left
+     *             of the FlowFile is destroyed.
+     * @throws FlowFileAccessException if some IO problem occurs accessing
+     *             FlowFile content; if an attempt is made to access the InputStream
+     *             provided to the given InputStreamCallback after this method completed its
+     *             execution
+     */
+    void read(FlowFile source, boolean allowSessionStreamManagement, InputStreamCallback reader) throws FlowFileAccessException;
 
     /**
      * Combines the content of all given source FlowFiles into a single given
      * destination FlowFile.
      *
-     * @param sources
-     * @param destination
+     * @param sources the flowfiles to merge
+     * @param destination the flowfile to use as the merged result
      * @return updated destination FlowFile (new size, etc...)
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
@@ -537,8 +641,8 @@ public interface ProcessSession {
      * Combines the content of all given source FlowFiles into a single given
      * destination FlowFile.
      *
-     * @param sources
-     * @param destination
+     * @param sources to merge together
+     * @param destination to merge to
      * @param header bytes that will be added to the beginning of the merged
      * output. May be null or empty.
      * @param footer bytes that will be added to the end of the merged output.
@@ -566,14 +670,18 @@ public interface ProcessSession {
 
     /**
      * Executes the given callback against the content corresponding to the
-     * given FlowFile
+     * given FlowFile.
      *
-     * @param source
-     * @param writer
+     * <i>Note</i>: The OutputStream provided to the given OutputStreamCallback
+     * will not be accessible once this method has completed its execution.
+     *
+     * @param source to write to
+     * @param writer used to write new content
      * @return updated FlowFile
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
-     * the given FlowFile(s)
+     * the given FlowFile(s), or if there is an open InputStream or OutputStream for the FlowFile's content
+     * (see {@link #read(FlowFile)} and {@link #write(FlowFile)}).
      * @throws FlowFileHandlingException if the given FlowFile is already
      * transferred or removed or doesn't belong to this session. Automatic
      * rollback will occur.
@@ -582,20 +690,53 @@ public interface ProcessSession {
      * destroyed, and the session is automatically rolled back and what is left
      * of the FlowFile is destroyed.
      * @throws FlowFileAccessException if some IO problem occurs accessing
-     * FlowFile content
+     * FlowFile content; if an attempt is made to access the OutputStream
+     * provided to the given OutputStreamCallaback after this method completed
+     * its execution
      */
-    FlowFile write(FlowFile source, OutputStreamCallback writer);
+    FlowFile write(FlowFile source, OutputStreamCallback writer) throws FlowFileAccessException;
+
+    /**
+     * Provides an OutputStream that can be used to write to the contents of the
+     * given FlowFile.
+     *
+     * @param source to write to
+     *
+     * @return an OutputStream that can be used to write to the contents of the FlowFile
+     *
+     * @throws IllegalStateException if detected that this method is being
+     * called from within a callback of another method in this session and for
+     * the given FlowFile(s), or if there is an open InputStream or OutputStream for the FlowFile's content
+     * (see {@link #read(FlowFile)}).
+     * @throws FlowFileHandlingException if the given FlowFile is already
+     * transferred or removed or doesn't belong to this session. Automatic
+     * rollback will occur.
+     * @throws MissingFlowFileException if the given FlowFile content cannot be
+     * found. The FlowFile should no longer be referenced, will be internally
+     * destroyed, and the session is automatically rolled back and what is left
+     * of the FlowFile is destroyed.
+     * @throws FlowFileAccessException if some IO problem occurs accessing
+     * FlowFile content; if an attempt is made to access the OutputStream
+     * provided to the given OutputStreamCallaback after this method completed
+     * its execution
+     */
+    OutputStream write(FlowFile source);
 
     /**
      * Executes the given callback against the content corresponding to the
-     * given flow file
+     * given flow file.
      *
-     * @param source
-     * @param writer
+     * <i>Note</i>: The InputStream & OutputStream provided to the given
+     * StreamCallback will not be accessible once this method has completed its
+     * execution.
+     *
+     * @param source to read from and write to
+     * @param writer used to read the old content and write new content
      * @return updated FlowFile
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
-     * the given FlowFile(s)
+     * the given FlowFile(s), or if there is an open InputStream or OutputStream for the FlowFile's content
+     * (see {@link #read(FlowFile)} and {@link #write(FlowFile)}).
      * @throws FlowFileHandlingException if the given FlowFile is already
      * transferred or removed or doesn't belong to this session. Automatic
      * rollback will occur.
@@ -604,20 +745,32 @@ public interface ProcessSession {
      * destroyed, and the session is automatically rolled back and what is left
      * of the FlowFile is destroyed.
      * @throws FlowFileAccessException if some IO problem occurs accessing
-     * FlowFile content
+     * FlowFile content; if an attempt is made to access the InputStream or
+     * OutputStream provided to the given StreamCallback after this method
+     * completed its execution
      */
-    FlowFile write(FlowFile source, StreamCallback writer);
+    FlowFile write(FlowFile source, StreamCallback writer) throws FlowFileAccessException;
 
     /**
      * Executes the given callback against the content corresponding to the
      * given FlowFile, such that any data written to the OutputStream of the
      * content will be appended to the end of FlowFile.
      *
-     * @param source
-     * @param writer
-     * @return
+     * <i>Note</i>: The OutputStream provided to the given OutputStreamCallback
+     * will not be accessible once this method has completed its execution.
+     *
+     * @param source the flowfile for which content should be appended
+     * @param writer used to write new bytes to the flowfile content
+     * @return the updated flowfile reference for the new content
+     * @throws FlowFileAccessException if an attempt is made to access the
+     * OutputStream provided to the given OutputStreamCallaback after this
+     * method completed its execution
+     * @throws IllegalStateException if detected that this method is being
+     * called from within a callback of another method in this session and for
+     * the given FlowFile(s), or if there is an open InputStream or OutputStream for the FlowFile's content
+     * (see {@link #read(FlowFile)} and {@link #write(FlowFile)}).
      */
-    FlowFile append(FlowFile source, OutputStreamCallback writer);
+    FlowFile append(FlowFile source, OutputStreamCallback writer) throws FlowFileAccessException;
 
     /**
      * Writes to the given FlowFile all content from the given content path.
@@ -671,8 +824,8 @@ public interface ProcessSession {
     /**
      * Writes the content of the given FlowFile to the given destination path.
      *
-     * @param flowFile
-     * @param destination
+     * @param flowFile to export the content of
+     * @param destination to export the content to
      * @param append if true will append to the current content at the given
      * path; if false will replace any current content
      * @throws IllegalStateException if detected that this method is being
@@ -693,8 +846,8 @@ public interface ProcessSession {
     /**
      * Writes the content of the given FlowFile to the given destination stream
      *
-     * @param flowFile
-     * @param destination
+     * @param flowFile to export the content of
+     * @param destination to export the content to
      * @throws IllegalStateException if detected that this method is being
      * called from within a callback of another method in this session and for
      * the given FlowFile(s)
@@ -713,7 +866,7 @@ public interface ProcessSession {
     /**
      * Returns a ProvenanceReporter that is tied to this ProcessSession.
      *
-     * @return
+     * @return the provenance reporter
      */
     ProvenanceReporter getProvenanceReporter();
 }

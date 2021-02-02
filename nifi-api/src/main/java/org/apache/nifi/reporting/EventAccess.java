@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.reporting;
 
+import org.apache.nifi.action.Action;
 import org.apache.nifi.controller.status.ProcessGroupStatus;
 import org.apache.nifi.provenance.ProvenanceEventRecord;
 import org.apache.nifi.provenance.ProvenanceEventRepository;
@@ -26,11 +27,14 @@ import java.util.List;
 public interface EventAccess {
 
     /**
-     * Gets the status for all components in this Controller.
-     *
-     * @return
+     * @return the status for all components in this Controller
      */
     ProcessGroupStatus getControllerStatus();
+
+    /**
+     * @return the status of all components in the specified group.
+     */
+    ProcessGroupStatus getGroupStatus(final String groupId);
 
     /**
      * Convenience method to obtain Provenance Events starting with (and
@@ -39,15 +43,25 @@ public interface EventAccess {
      *
      * @param firstEventId the ID of the first event to obtain
      * @param maxRecords the maximum number of records to obtain
-     * @return
-     * @throws java.io.IOException
+     * @return event records matching query
+     * @throws java.io.IOException if unable to get records
      */
     List<ProvenanceEventRecord> getProvenanceEvents(long firstEventId, final int maxRecords) throws IOException;
 
     /**
-     * Returns the Provenance Event Repository
-     *
-     * @return
+     * @return the Provenance Event Repository
      */
     ProvenanceEventRepository getProvenanceRepository();
+
+    /**
+     * Obtains flow changes starting with (and including) the given action ID. If no action
+     * exists with that ID, the first action to be returned will have an ID greater than
+     * <code>firstActionId</code>.
+     *
+     * @param firstActionId the id of the first action to obtain
+     * @param maxActions the maximum number of actions to obtain
+     * @return actions with ids greater than or equal to firstActionID, up to the max number of actions
+     */
+    List<Action> getFlowChanges(int firstActionId, final int maxActions);
+
 }

@@ -25,64 +25,69 @@ import java.util.List;
  */
 public interface BulletinRepository {
 
+    int MAX_BULLETINS_PER_COMPONENT = 5;
+    int MAX_BULLETINS_FOR_CONTROLLER = 10;
+
     /**
      * Adds a Bulletin to the repository.
      *
-     * @param bulletin
+     * @param bulletin to add
      */
     void addBulletin(Bulletin bulletin);
 
     /**
-     * Returns the capacity for the number of bulletins for the controller.
-     *
-     * @return
+     * @return the capacity for the number of bulletins for the controller
      */
     int getControllerBulletinCapacity();
 
     /**
-     * Returns the capacity for the number of bulletins per component.
-     *
-     * @return
+     * @return the capacity for the number of bulletins per component
      */
     int getComponentBulletinCapacity();
 
     /**
      * Finds Bulletin's that meet the specified query.
      *
-     * @param bulletinQuery
-     * @return
+     * @param bulletinQuery indicates which bulletins are of interest
+     * @return bulletins that met the query
      */
     List<Bulletin> findBulletins(BulletinQuery bulletinQuery);
 
     /**
+     * Finds all bulletins for the specified source component.
+     *
+     * @param sourceId id of the source
+     * @return bulletins for the given source
+     */
+    List<Bulletin> findBulletinsForSource(String sourceId);
+
+    /**
      * Finds all bulletins for the specified group.
      *
-     * @param groupId
-     * @return
+     * @param groupId id of the group
+     * @return bulletins for the given group
      */
     List<Bulletin> findBulletinsForGroupBySource(String groupId);
 
     /**
      * Finds all bulletins for the specified group.
      *
-     * @param groupId
-     * @param maxPerComponent
-     * @return
+     * @param groupId id of the group
+     * @param maxPerComponent max responses wanted
+     * @return bulletins found
      */
     List<Bulletin> findBulletinsForGroupBySource(String groupId, int maxPerComponent);
 
     /**
-     * Finds all bulletins for the controller;
-     *
-     * @return
+     * @return all bulletins for the controller
      */
     List<Bulletin> findBulletinsForController();
 
     /**
      * Finds all bulletins for the controller;
      *
-     * @param max
-     * @return
+     * @param max limits the number of responses
+     * @return all bulletins for the controller
      */
     List<Bulletin> findBulletinsForController(int max);
 }

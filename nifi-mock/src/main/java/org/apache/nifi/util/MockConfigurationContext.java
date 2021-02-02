@@ -17,34 +17,89 @@
 package org.apache.nifi.util;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.controller.ControllerServiceLookup;
+import org.apache.nifi.registry.VariableRegistry;
 
 public class MockConfigurationContext implements ConfigurationContext {
 
     private final Map<PropertyDescriptor, String> properties;
     private final ControllerServiceLookup serviceLookup;
+    private final ControllerService service;
+    private final VariableRegistry variableRegistry;
 
-    public MockConfigurationContext(final Map<PropertyDescriptor, String> properties, final ControllerServiceLookup serviceLookup) {
+    public MockConfigurationContext(final Map<PropertyDescriptor, String> properties,
+            final ControllerServiceLookup serviceLookup) {
+        this(null, properties, serviceLookup, VariableRegistry.EMPTY_REGISTRY);
+    }
+
+    public MockConfigurationContext(final Map<PropertyDescriptor, String> properties,
+            final ControllerServiceLookup serviceLookup,
+            final VariableRegistry variableRegistry) {
+        this(null, properties, serviceLookup, variableRegistry);
+    }
+
+    public MockConfigurationContext(final ControllerService service,
+            final Map<PropertyDescriptor, String> properties,
+            final ControllerServiceLookup serviceLookup,
+            final VariableRegistry variableRegistry) {
+        this.service = service;
         this.properties = properties;
         this.serviceLookup = serviceLookup;
+        this.variableRegistry = variableRegistry;
     }
 
     @Override
     public PropertyValue getProperty(final PropertyDescriptor property) {
         String value = properties.get(property);
         if (value == null) {
-            value = property.getDefaultValue();
+            value = getActualDescriptor(property).getDefaultValue();
         }
-        return new MockPropertyValue(value, serviceLookup);
+        return new MockPropertyValue(value, serviceLookup, variableRegistry);
     }
 
     @Override
     public Map<PropertyDescriptor, String> getProperties() {
         return new HashMap<>(this.properties);
+    }
+
+    @Override
+    public Map<String, String> getAllProperties() {
+        final Map<String,String> propValueMap = new LinkedHashMap<>();
+        for (final Map.Entry<PropertyDescriptor, String> entry : getProperties().entrySet()) {
+            propValueMap.put(entry.getKey().getName(), entry.getValue());
+        }
+        return propValueMap;
+    }
+
+    private PropertyDescriptor getActualDescriptor(final PropertyDescriptor property) {
+        if (service == null) {
+            return property;
+        }
+
+        final PropertyDescriptor resolved = service.getPropertyDescriptor(property.getName());
+        return resolved == null ? property : resolved;
+    }
+
+    @Override
+    public String getSchedulingPeriod() {
+        return "0 secs";
+    }
+
+    @Override
+    public Long getSchedulingPeriod(final TimeUnit timeUnit) {
+        return 0L;
+    }
+
+    @Override
+    public String getName() {
+        return null;
     }
 }

@@ -18,9 +18,12 @@ package org.apache.nifi.reporting;
 
 import java.util.concurrent.TimeUnit;
 
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.AbstractConfigurableComponent;
+import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.ControllerServiceLookup;
-import org.apache.nifi.processor.ProcessorInitializationContext;
+import org.apache.nifi.controller.NodeTypeProvider;
+import org.apache.nifi.logging.ComponentLog;
 
 public abstract class AbstractReportingTask extends AbstractConfigurableComponent implements ReportingTask {
 
@@ -28,31 +31,39 @@ public abstract class AbstractReportingTask extends AbstractConfigurableComponen
     private String name;
     private long schedulingNanos;
     private ControllerServiceLookup serviceLookup;
+    private ComponentLog logger;
+    private NodeTypeProvider nodeTypeProvider;
 
     @Override
     public final void initialize(final ReportingInitializationContext config) throws InitializationException {
         identifier = config.getIdentifier();
+        logger = config.getLogger();
         name = config.getName();
         schedulingNanos = config.getSchedulingPeriod(TimeUnit.NANOSECONDS);
         serviceLookup = config.getControllerServiceLookup();
+        nodeTypeProvider = config.getNodeTypeProvider();
 
         init(config);
     }
 
     /**
-     * Returns the {@link ControllerServiceLookup} that was passed to the
-     * {@link #init(ProcessorInitializationContext)} method
-     *
-     * @return
+     * @return the {@link ControllerServiceLookup} that was passed to the
+     * {@link #initialize(ReportingInitializationContext)} method
      */
     protected final ControllerServiceLookup getControllerServiceLookup() {
         return serviceLookup;
     }
 
     /**
-     * Returns the identifier of this Reporting Task
-     *
-     * @return
+     * @return the {@link NodeTypeProvider} that was passed to the
+     * {@link #initialize(ReportingInitializationContext)} method
+     */
+    protected final NodeTypeProvider getNodeTypeProvider() {
+        return nodeTypeProvider;
+    }
+
+    /**
+     * @return the identifier of this Reporting Task
      */
     @Override
     public String getIdentifier() {
@@ -60,22 +71,27 @@ public abstract class AbstractReportingTask extends AbstractConfigurableComponen
     }
 
     /**
-     * Returns the name of this Reporting Task
-     *
-     * @return
+     * @return the name of this Reporting Task
      */
     protected String getName() {
         return name;
     }
 
     /**
-     * Returns the amount of times that elapses between the moment that this
+     * Sets various component information using the given context
+     * @param context the context to use for this reporting task
+     */
+    @OnScheduled
+    public void setComponentInfo(ConfigurationContext context) {
+        this.name = context.getName();
+    }
+
+    /**
+     * @param timeUnit of scheduling period
+     * @return the amount of times that elapses between the moment that this
      * ReportingTask finishes its invocation of
      * {@link #onTrigger(ReportingContext)} and the next time that
      * {@link #onTrigger(ReportingContext)} is called.
-     *
-     * @param timeUnit
-     * @return
      */
     protected long getSchedulingPeriod(final TimeUnit timeUnit) {
         return timeUnit.convert(schedulingNanos, TimeUnit.NANOSECONDS);
@@ -85,10 +101,17 @@ public abstract class AbstractReportingTask extends AbstractConfigurableComponen
      * Provides a mechanism by which subclasses can perform initialization of
      * the Reporting Task before it is scheduled to be run
      *
-     * @param config
-     * @throws InitializationException
+     * @param config context
+     * @throws InitializationException if failure to init
      */
     protected void init(final ReportingInitializationContext config) throws InitializationException {
     }
 
+    /**
+     * @return the logger that has been provided to the component by the
+     * framework in its initialize method
+     */
+    protected ComponentLog getLogger() {
+        return logger;
+    }
 }

@@ -16,21 +16,38 @@
  */
 package org.apache.nifi.controller;
 
-public interface ControllerServiceInitializationContext {
+import org.apache.nifi.components.state.StateManager;
+import org.apache.nifi.kerberos.KerberosContext;
+import org.apache.nifi.logging.ComponentLog;
+
+public interface ControllerServiceInitializationContext extends KerberosContext {
 
     /**
-     * Returns the identifier associated with the {@link ControllerService} with
+     * @return the identifier associated with the {@link ControllerService} with
      * which this context is associated
-     *
-     * @return
      */
     String getIdentifier();
 
     /**
-     * Returns the {@link ControllerServiceLookup} which can be used to obtain
+     * @return the {@link ControllerServiceLookup} which can be used to obtain
      * Controller Services
-     *
-     * @return
      */
     ControllerServiceLookup getControllerServiceLookup();
+
+    /**
+     * @return a logger that can be used to log important events in a standard
+     * way and generate bulletins when appropriate
+     */
+    ComponentLog getLogger();
+
+    /**
+     * @return the StateManager that can be used to store and retrieve state for this component
+     */
+    StateManager getStateManager();
+
+    /**
+     * @return the {@link NodeTypeProvider} which can be used to detect the node
+     * type of this NiFi instance.
+     */
+    NodeTypeProvider getNodeTypeProvider();
 }

@@ -124,6 +124,43 @@ public interface ProvenanceReporter {
     void receive(FlowFile flowFile, String transitUri, String sourceSystemFlowFileIdentifier, String details, long transmissionMillis);
 
     /**
+     * Emits a Provenance Event of type
+     * {@link ProvenanceEventType#FETCH FETCH} that indicates that the content of the given
+     * FlowFile was overwritten with the data received from an external source.
+     *
+     * @param flowFile the FlowFile whose content was replaced
+     * @param transitUri A URI that provides information about the System and
+     * Protocol information over which the transfer occurred.
+     */
+    void fetch(FlowFile flowFile, String transitUri);
+
+    /**
+     * Emits a Provenance Event of type
+     * {@link ProvenanceEventType#FETCH FETCH} that indicates that the content of the given
+     * FlowFile was overwritten with the data received from an external source.
+     *
+     * @param flowFile the FlowFile whose content was replaced
+     * @param transitUri A URI that provides information about the System and
+     * Protocol information over which the transfer occurred.
+     * @param transmissionMillis the number of milliseconds taken to transfer the data
+     */
+    void fetch(FlowFile flowFile, String transitUri, long transmissionMillis);
+
+    /**
+     * Emits a Provenance Event of type
+     * {@link ProvenanceEventType#FETCH FETCH} that indicates that the content of the given
+     * FlowFile was overwritten with the data received from an external source.
+     *
+     * @param flowFile the FlowFile whose content was replaced
+     * @param transitUri A URI that provides information about the System and
+     * Protocol information over which the transfer occurred.
+     * @param details details about the event
+     * @param transmissionMillis the number of milliseconds taken to transfer
+     * the data
+     */
+    void fetch(FlowFile flowFile, String transitUri, String details, long transmissionMillis);
+
+    /**
      * Emits a Provenance Event of type {@link ProvenanceEventType#SEND SEND}
      * that indicates that a copy of the given FlowFile was sent to an external
      * destination. The external destination may be a remote system or may be a
@@ -205,7 +242,7 @@ public interface ProvenanceReporter {
      * correlate the SEND and RECEIVE events.
      * @param force if <code>true</code>, this event will be added to the
      * Provenance Repository immediately and will still be persisted if the
-     * {@link nifi.processor.ProcessSession ProcessSession} to which this
+     * {@link org.apache.nifi.processor.ProcessSession ProcessSession} to which this
      * ProvenanceReporter is associated is rolled back. Otherwise, the Event
      * will be recorded only on a successful session commit.
      */
@@ -227,7 +264,7 @@ public interface ProvenanceReporter {
      * remote system's Distinguished Name
      * @param force if <code>true</code>, this event will be added to the
      * Provenance Repository immediately and will still be persisted if the
-     * {@link nifi.processor.ProcessSession ProcessSession} to which this
+     * {@link org.apache.nifi.processor.ProcessSession ProcessSession} to which this
      * ProvenanceReporter is associated is rolled back. Otherwise, the Event
      * will be recorded only on a successful session commit.
      */
@@ -249,7 +286,7 @@ public interface ProvenanceReporter {
      * data to the remote system
      * @param force if <code>true</code>, this event will be added to the
      * Provenance Repository immediately and will still be persisted if the
-     * {@link nifi.processor.ProcessSession ProcessSession} to which this
+     * {@link org.apache.nifi.processor.ProcessSession ProcessSession} to which this
      * ProvenanceReporter is associated is rolled back. Otherwise, the Event
      * will be recorded only on a successful session commit.
      */
@@ -273,11 +310,37 @@ public interface ProvenanceReporter {
      * data to the remote system
      * @param force if <code>true</code>, this event will be added to the
      * Provenance Repository immediately and will still be persisted if the
-     * {@link nifi.processor.ProcessSession ProcessSession} to which this
+     * {@link org.apache.nifi.processor.ProcessSession ProcessSession} to which this
      * ProvenanceReporter is associated is rolled back. Otherwise, the Event
      * will be recorded only on a successful session commit.
      */
     void send(FlowFile flowFile, String transitUri, String details, long transmissionMillis, boolean force);
+
+    /**
+     * Emits a Provenance Event of type {@link ProvenanceEventType#REMOTE_INVOCATION}
+     * that indicates a remote invocation is requested to an external endpoint using
+     * the given FlowFile. The external endpoint may exist in a remote or a local system,
+     * but is external to NiFi.
+     * @param flowFile the FlowFile that was used to make the remote invocation
+     * @param transitUri A URI that provides information about the System and
+     * Protocol information over which the invocation occurred. The intent of this
+     * field is to identify they type and target resource or object of the invocation.
+     */
+    void invokeRemoteProcess(FlowFile flowFile, String transitUri);
+
+    /**
+     * Emits a Provenance Event of type {@link ProvenanceEventType#REMOTE_INVOCATION}
+     * that indicates a remote invocation is requested to an external endpoint using
+     * the given FlowFile. The external endpoint may exist in a remote or a local system,
+     * but is external to NiFi.
+     * @param flowFile the FlowFile that was used to make the remote invocation
+     * @param transitUri A URI that provides information about the System and
+     * Protocol information over which the invocation occurred. The intent of this
+     * field is to identify they type and target resource or object of the invocation.
+     * @param details additional details related to the REMOTE_INVOCATION event, such as an
+     * explanation of the invoked process.
+     */
+    void invokeRemoteProcess(FlowFile flowFile, String transitUri, String details);
 
     /**
      * Emits a Provenance Event of type

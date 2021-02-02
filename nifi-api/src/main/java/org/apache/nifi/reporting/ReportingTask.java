@@ -16,8 +16,8 @@
  */
 package org.apache.nifi.reporting;
 
+import org.apache.nifi.annotation.lifecycle.OnConfigurationRestored;
 import org.apache.nifi.components.ConfigurableComponent;
-import org.apache.nifi.controller.annotation.OnConfigured;
 
 /**
  * Defines a task that is responsible for reporting status information to
@@ -47,7 +47,7 @@ import org.apache.nifi.controller.annotation.OnConfigured;
  *
  * <p>
  * ReportingTasks may choose to annotate a method with the
- * {@link OnConfigured @OnConfigured} annotation. If this is done, that method
+ * {@link OnConfigurationRestored @OnConfigurationRestored} annotation. If this is done, that method
  * will be invoked after all properties have been set for the ReportingTask and
  * before it is scheduled to run. If the method throws an Exception, the
  * ReportingTask will be Administratively yielded and will not run for the
@@ -60,8 +60,8 @@ public interface ReportingTask extends ConfigurableComponent {
      * Provides the Reporting Task with access to objects that may be of use
      * throughout the life of the service
      *
-     * @param config
-     * @throws org.apache.nifi.reporting.InitializationException
+     * @param config of initialization context
+     * @throws org.apache.nifi.reporting.InitializationException if unable to init
      */
     void initialize(ReportingInitializationContext config) throws InitializationException;
 
@@ -69,7 +69,7 @@ public interface ReportingTask extends ConfigurableComponent {
      * This method is called on a scheduled interval to allow the Reporting Task
      * to perform its tasks.
      *
-     * @param context
+     * @param context reporting context
      */
     void onTrigger(ReportingContext context);
 }

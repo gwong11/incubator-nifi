@@ -46,11 +46,9 @@ public abstract class AbstractConfigurableComponent implements ConfigurableCompo
     }
 
     /**
-     * Returns a PropertyDescriptor for the name specified that is fully
+     * @param descriptorName to lookup the descriptor
+     * @return a PropertyDescriptor for the name specified that is fully
      * populated
-     *
-     * @param descriptorName
-     * @return
      */
     @Override
     public final PropertyDescriptor getPropertyDescriptor(final String descriptorName) {
@@ -86,14 +84,19 @@ public abstract class AbstractConfigurableComponent implements ConfigurableCompo
         // goes through supported properties
         final Collection<ValidationResult> results = new ArrayList<>();
         final List<PropertyDescriptor> supportedDescriptors = getSupportedPropertyDescriptors();
+
         if (null != supportedDescriptors) {
             for (final PropertyDescriptor descriptor : supportedDescriptors) {
                 String value = context.getProperty(descriptor).getValue();
                 if (value == null) {
                     value = descriptor.getDefaultValue();
                 }
+
                 if (value == null && descriptor.isRequired()) {
-                    results.add(new ValidationResult.Builder().valid(false).input(null).subject(descriptor.getName()).explanation(descriptor.getName() + " is required").build());
+                    String displayName = descriptor.getDisplayName();
+                    ValidationResult.Builder builder = new ValidationResult.Builder().valid(false).input(null).subject(displayName != null ? displayName : descriptor.getName());
+                    builder = (displayName != null) ? builder.explanation(displayName + " is required") : builder.explanation(descriptor.getName() + " is required");
+                    results.add(builder.build());
                     continue;
                 } else if (value == null) {
                     continue;
@@ -141,11 +144,12 @@ public abstract class AbstractConfigurableComponent implements ConfigurableCompo
      * method a processor may simply get the latest value whenever it needs it
      * and if necessary lazily evaluate it.
      *
-     * @param descriptor
+     * @param descriptor of the modified property
      * @param oldValue non-null property value (previous)
      * @param newValue the new property value or if null indicates the property
      * was removed
      */
+    @Override
     public void onPropertyModified(final PropertyDescriptor descriptor, final String oldValue, final String newValue) {
     }
 
@@ -168,7 +172,7 @@ public abstract class AbstractConfigurableComponent implements ConfigurableCompo
      * <p>
      * Default is null.
      *
-     * @param propertyDescriptorName
+     * @param propertyDescriptorName used to lookup if any property descriptors exist for that name
      * @return new property descriptor if supported
      */
     protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(final String propertyDescriptorName) {
@@ -186,10 +190,10 @@ public abstract class AbstractConfigurableComponent implements ConfigurableCompo
         return Collections.EMPTY_LIST;
     }
 
+    @Override
     public final List<PropertyDescriptor> getPropertyDescriptors() {
-        final List<PropertyDescriptor> descriptors = new ArrayList<>();
-        descriptors.addAll(getSupportedPropertyDescriptors());
-        return descriptors;
+        final List<PropertyDescriptor> supported = getSupportedPropertyDescriptors();
+        return supported == null ? Collections.<PropertyDescriptor>emptyList() : new ArrayList<>(supported);
     }
 
     @Override
